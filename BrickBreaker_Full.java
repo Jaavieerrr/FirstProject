@@ -527,7 +527,8 @@ public class BrickBreaker_Full {
             if (!gameStarted) {
                 g2.setFont(new Font("SansSerif", Font.PLAIN, 14));
                 g2.setColor(Color.GRAY);
-                g2.drawString("Resize window to change game size", 12, WINDOW_H - 50);
+                g2.drawString("Use LEFT and RIGHT arrow keys to move paddle.", WINDOW_W/2 - 160, WINDOW_H/2 - 40);
+
             }
 
             g2.dispose();  // Clean up Graphics2D resources
@@ -677,7 +678,7 @@ public class BrickBreaker_Full {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             // Create the main window frame
-            JFrame frame = new JFrame("Brick Breaker - Resizable");
+            JFrame frame = new JFrame("Brick Breaker");
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             
             // Create and add the game board panel
