@@ -245,9 +245,22 @@ public class BrickBreaker_Full {
         }
 
         // Update scaling factors when window is resized
+        // Maintains uniform scaling to keep aspect ratio even
         private void updateScale() {
-            scaleX = (double) getWidth() / WINDOW_W;
-            scaleY = (double) getHeight() / WINDOW_H;
+            double windowWidth = getWidth();
+            double windowHeight = getHeight();
+            
+            // Calculate scale based on the limiting dimension
+            // Use the smaller scale factor to maintain aspect ratio uniformly
+            double scaleFromWidth = windowWidth / WINDOW_W;
+            double scaleFromHeight = windowHeight / WINDOW_H;
+            
+            // Use the smaller scale to fit everything properly
+            double uniformScale = Math.min(scaleFromWidth, scaleFromHeight);
+            
+            // Apply uniform scaling to both axes
+            scaleX = uniformScale;
+            scaleY = uniformScale;
         }
 
         // Generate the grid of bricks (5 rows x 10 columns = 50 bricks)
@@ -295,9 +308,13 @@ public class BrickBreaker_Full {
             // Skip updates if game is not in play state
             if (gameOver || gameWin || !gameStarted || gamePaused) return;
 
-            // Handle paddle movement based on pressed keys
-            if (leftPressed) paddle.moveLeft();
-            if (rightPressed) paddle.moveRight(getWidth());
+            // Handle paddle movement based on pressed keys (use game coordinates)
+            if (leftPressed) {
+                paddle.x = Math.max(0, paddle.x - paddle.speed);
+            }
+            if (rightPressed) {
+                paddle.x = Math.min(WINDOW_W - paddle.width, paddle.x + paddle.speed);
+            }
 
             // Update ball position
             ball.update();
@@ -325,8 +342,8 @@ public class BrickBreaker_Full {
             }
             
             // Right wall collision
-            if (ball.x + ball.width >= getWidth()) { 
-                ball.x = getWidth() - ball.width; 
+            if (ball.x + ball.width >= WINDOW_W) { 
+                ball.x = WINDOW_W - ball.width; 
                 ball.reverseX(); 
                 Toolkit.getDefaultToolkit().beep(); 
             }
@@ -339,7 +356,8 @@ public class BrickBreaker_Full {
             }
             
             // Bottom boundary - player loses a life
-            if (ball.y > getHeight()) {
+            // Use WINDOW_H instead of getHeight() to use game coordinates
+            if (ball.y > WINDOW_H) {
                 lives--;
                 Toolkit.getDefaultToolkit().beep();
                 if (lives <= 0) {
@@ -357,17 +375,17 @@ public class BrickBreaker_Full {
          * Ball velocity is randomized slightly for variety
          */
         private void resetPositions() {
-            // Center paddle horizontally
-            paddle.x = (getWidth() - (int)(paddle.width * scaleX)) / 2.0;
-            // Position paddle near bottom
-            paddle.y = getHeight() - (int)(70 * scaleY);
+            // Center paddle horizontally (use game coordinates WINDOW_W, not screen width)
+            paddle.x = (WINDOW_W - paddle.width) / 2.0;
+            // Position paddle near bottom (use game coordinates WINDOW_H)
+            paddle.y = WINDOW_H - 70;
             
-            // Center ball
-            ball.x = getWidth() / 2.0 - (ball.width * scaleX)/2.0;
-            ball.y = getHeight() / 2.0;
+            // Center ball (use game coordinates)
+            ball.x = WINDOW_W / 2.0 - ball.width / 2.0;
+            ball.y = WINDOW_H / 2.0;
             
             // Set ball speed and direction with random horizontal component
-            double speed = 3.6 * Math.sqrt((scaleX + scaleY) / 2.0);
+            double speed = 3.6;
             ball.dx = speed * (Math.random() > 0.5 ? 1 : -1);  // Random left/right
             ball.dy = -speed;  // Always upward
         }
@@ -405,37 +423,75 @@ public class BrickBreaker_Full {
         /**
          * Collision detection: Ball vs Bricks
          * Detects which side was hit and bounces accordingly
+         * Prevents ball from penetrating through multiple bricks
          */
         private void checkBrickCollision() {
             Rectangle2D ballRect = ball.getBounds2D();
+            Brick collidedBrick = null;
+            double closestDistance = Double.MAX_VALUE;
             
+            // Find the closest brick collision
             for (Brick b : bricks) {
                 // Skip already destroyed bricks
                 if (b.destroyed) continue;
                 
                 Rectangle2D brickRect = b.getBounds2D();
                 if (ballRect.intersects(brickRect)) {
-                    // Calculate intersection area to determine collision side
-                    Rectangle2D intersection = ballRect.createIntersection(brickRect);
-
-                    // If width < height, hit from left/right; otherwise hit from top/bottom
-                    if (intersection.getWidth() < intersection.getHeight()) {
-                        ball.reverseX();  // Bounce horizontally
-                    } else {
-                        ball.reverseY();  // Bounce vertically
-                    }
-
-                    // Mark brick as destroyed and update score
-                    b.destroyed = true;
-                    score += 100;
-                    Toolkit.getDefaultToolkit().beep();
-
-                    // Small nudge prevents re-collision with same brick
-                    ball.x += ball.dx * 0.5;
-                    ball.y += ball.dy * 0.5;
+                    // Calculate distance from ball center to brick center
+                    double brickCenterX = brickRect.getCenterX();
+                    double brickCenterY = brickRect.getCenterY();
+                    double ballCenterX = ballRect.getCenterX();
+                    double ballCenterY = ballRect.getCenterY();
                     
-                    break; // Only collide with one brick per frame for stability
+                    double distance = Math.sqrt(
+                        Math.pow(ballCenterX - brickCenterX, 2) + 
+                        Math.pow(ballCenterY - brickCenterY, 2)
+                    );
+                    
+                    // Keep track of the closest brick hit
+                    if (distance < closestDistance) {
+                        closestDistance = distance;
+                        collidedBrick = b;
+                    }
                 }
+            }
+            
+            // Only process collision with the closest brick
+            if (collidedBrick != null) {
+                Rectangle2D brickRect = collidedBrick.getBounds2D();
+                Rectangle2D intersection = ballRect.createIntersection(brickRect);
+                
+                // Determine collision side based on intersection dimensions
+                double overlapX = intersection.getWidth();
+                double overlapY = intersection.getHeight();
+                
+                // If ball is moving toward brick, bounce accordingly
+                if (overlapX < overlapY) {
+                    // Horizontal collision (left/right side)
+                    if (ball.dx > 0) {
+                        // Ball moving right, bounce left
+                        ball.x = brickRect.getMinX() - ball.width - 1;
+                    } else {
+                        // Ball moving left, bounce right
+                        ball.x = brickRect.getMaxX() + 1;
+                    }
+                    ball.reverseX();
+                } else {
+                    // Vertical collision (top/bottom side)
+                    if (ball.dy > 0) {
+                        // Ball moving down, bounce up
+                        ball.y = brickRect.getMinY() - ball.height - 1;
+                    } else {
+                        // Ball moving up, bounce down
+                        ball.y = brickRect.getMaxY() + 1;
+                    }
+                    ball.reverseY();
+                }
+
+                // Mark brick as destroyed and update score
+                collidedBrick.destroyed = true;
+                score += 100;
+                Toolkit.getDefaultToolkit().beep();
             }
         }
 
@@ -465,7 +521,16 @@ public class BrickBreaker_Full {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             
-            // Apply scaling transformations for responsive design
+            // Calculate centered position for game board
+            int panelWidth = getWidth();
+            int panelHeight = getHeight();
+            int gameWidth = (int)(WINDOW_W * scaleX);
+            int gameHeight = (int)(WINDOW_H * scaleY);
+            int offsetX = (panelWidth - gameWidth) / 2;
+            int offsetY = (panelHeight - gameHeight) / 2;
+            
+            // Translate to center the game, then scale
+            g2.translate(offsetX, offsetY);
             g2.scale(scaleX, scaleY);
 
             // Draw optional background image
@@ -528,7 +593,6 @@ public class BrickBreaker_Full {
                 g2.setFont(new Font("SansSerif", Font.PLAIN, 14));
                 g2.setColor(Color.GRAY);
                 g2.drawString("Use LEFT and RIGHT arrow keys to move paddle.", WINDOW_W/2 - 160, WINDOW_H/2 - 40);
-
             }
 
             g2.dispose();  // Clean up Graphics2D resources
@@ -602,8 +666,18 @@ public class BrickBreaker_Full {
          */
         @Override
         public void mouseClicked(MouseEvent e) {
-            // Scale mouse coordinates to match game coordinate system
-            Point scaledPoint = new Point((int)(e.getX() / scaleX), (int)(e.getY() / scaleY));
+            // Calculate the offset from centering
+            int panelWidth = getWidth();
+            int panelHeight = getHeight();
+            int gameWidth = (int)(WINDOW_W * scaleX);
+            int gameHeight = (int)(WINDOW_H * scaleY);
+            int offsetX = (panelWidth - gameWidth) / 2;
+            int offsetY = (panelHeight - gameHeight) / 2;
+            
+            // Adjust mouse coordinates to account for centering and scaling
+            double adjustedX = (e.getX() - offsetX) / scaleX;
+            double adjustedY = (e.getY() - offsetY) / scaleY;
+            Point scaledPoint = new Point((int)adjustedX, (int)adjustedY);
             
             // Check if "START GAME" button was clicked
             if (!gameStarted && startButtonRect.contains(scaledPoint)) {
